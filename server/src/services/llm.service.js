@@ -1,4 +1,5 @@
 import axios from "axios";
+import { systemPrompt } from "../config/systemPrompt.js";
 
 
 export const generateReply = async (userText) => {
@@ -10,14 +11,15 @@ export const generateReply = async (userText) => {
         messages: [
           {
             role: "system",
-            content: "You are a warm, calm, emotionally supportive AI companion."
+            content: systemPrompt
           },
           {
             role: "user",
             content: userText
           }
         ],
-        temperature: 0.7
+        temperature: 0.7,
+        max_tokens:280
       },
       {
         headers: {
