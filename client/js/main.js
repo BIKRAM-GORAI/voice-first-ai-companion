@@ -1,5 +1,6 @@
 import { startRecording, stopRecording } from "./voice/recorder.js";
 import { sendAudioToBackend } from "./api/apiClient.js";
+import { speakText } from "./voice/tts.js";
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -17,4 +18,6 @@ stopBtn.addEventListener("click", async () => {
 
   console.log("Transcript:", result.transcript);
   console.log("Reply:", result.reply);
+
+  speakText(result.reply);
 });
