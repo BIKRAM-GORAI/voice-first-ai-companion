@@ -1,25 +1,29 @@
+let currentUtterance = null;
+
 export const speakText = (text) => {
-  const utterance = new SpeechSynthesisUtterance(text);
+  // Cancel any existing speech first
+  window.speechSynthesis.cancel();
+
+  currentUtterance = new SpeechSynthesisUtterance(text);
+
+  currentUtterance.rate = 0.95;
+  currentUtterance.pitch = 1;
+  currentUtterance.volume = 1;
 
   const voices = window.speechSynthesis.getVoices();
-
-  // Log voices once to inspect
-  console.log(voices);
-
-  // Try to find a better voice manually
   const preferredVoice = voices.find(v =>
-    v.name.includes("Google") || 
+    v.name.includes("Google") ||
     v.name.includes("Microsoft") ||
     v.name.includes("Natural")
   );
 
   if (preferredVoice) {
-    utterance.voice = preferredVoice;
+    currentUtterance.voice = preferredVoice;
   }
 
-  utterance.rate = 0.95;   // Slightly slower = more natural
-  utterance.pitch = 1.05;  // Slight variation
-  utterance.volume = 1;
+  window.speechSynthesis.speak(currentUtterance);
+};
 
-  window.speechSynthesis.speak(utterance);
+export const stopSpeaking = () => {
+  window.speechSynthesis.cancel();
 };
