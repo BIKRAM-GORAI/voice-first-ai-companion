@@ -22,6 +22,22 @@ const extractMemory = (text) => {
   }
 };
 
+
+
+const extractKeywords = (text) => {
+  const stopWords = ["the", "is", "a", "an", "and", "to", "of", "in", "on", "for", "after", "before", "i", "my"];
+
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "")
+    .split(" ")
+    .filter(word => word.length > 3 && !stopWords.includes(word));
+};
+
+
+
+
+
 export const handleVoiceRequest = async (req, res) => {
   try {
     if (!req.file) {
@@ -33,14 +49,27 @@ export const handleVoiceRequest = async (req, res) => {
     // 1️⃣ STT
     const transcript = await transcribeAudio(audioBuffer);
     console.log("Transcript:", transcript);
+    
+
+
+    const keywords = extractKeywords(transcript);
+    const relevantMemories = await LongTermMemory.find({
+      tags: { $in: keywords }
+    })
+    .sort({ importanceScore: -1 })
+    .limit(2);
+
+    const memoryTexts = relevantMemories.map(m => `- ${m.content}`);
+
+
 
     // 2️⃣ LLM
-    const reply = await generateReply(transcript);
+    const reply = await generateReply(transcript, memoryTexts);
 
 
     console.log("RAW LLM REPLY:\n", reply);
 
-    
+
     // Extract memory if present
     const { cleanReply, memory } = extractMemory(reply);
 
