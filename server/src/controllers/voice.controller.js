@@ -1,4 +1,3 @@
-
 import { transcribeAudio } from "../services/stt.service.js";
 import { generateReply } from "../services/llm.service.js";
 import { LongTermMemory } from "../models/LongTermMemory.model.js";
@@ -7,19 +6,44 @@ import { summarizeConversation } from "../services/summary.service.js";
 import { classifyMemory } from "../services/memoryClassifier.service.js";
 import { PersonalityMemory } from "../models/PersonalityMemory.model.js";
 import { classifyPersonality } from "../services/personalityClassifier.service.js";
+import { generateEmbedding } from "../services/embedding.service.js";
+import {
+  shouldRecallMemory,
+  pickMemoryToRecall,
+} from "../services/spontaneousRecall.service.js";
+
+import { cosineSimilarity } from "../services/vectorSearch.service.js";
+
+import {
+  shouldTriggerCuriosity,
+  pickCuriosityMemory,
+} from "../services/curiosityRecall.service.js";
 
 const extractKeywords = (text) => {
   const stopWords = [
-    "the","is","a","an","and","to","of",
-    "in","on","for","after","before",
-    "i","my","you","your"
+    "the",
+    "is",
+    "a",
+    "an",
+    "and",
+    "to",
+    "of",
+    "in",
+    "on",
+    "for",
+    "after",
+    "before",
+    "i",
+    "my",
+    "you",
+    "your",
   ];
 
   return text
     .toLowerCase()
     .replace(/[^\w\s]/g, "")
     .split(" ")
-    .filter(word => word.length > 3 && !stopWords.includes(word));
+    .filter((word) => word.length > 3 && !stopWords.includes(word));
 };
 
 export const handleVoiceRequest = async (req, res) => {
@@ -40,65 +64,126 @@ export const handleVoiceRequest = async (req, res) => {
     if (!session) {
       session = await ConversationSession.create({
         summary: "",
-        recent: []
+        recent: [],
       });
     }
 
     // 3️⃣ Add user message
     session.recent.push({
       role: "user",
-      content: transcript
+      content: transcript,
     });
 
-    // 4️⃣ Retrieve relevant long-term memories
-    const keywords = extractKeywords(transcript);
+    // const queryEmbedding = await generateEmbedding(transcript);
 
-    const relevantMemories = await LongTermMemory.find({
-      tags: { $in: keywords }
-    })
-      .sort({ importanceScore: -1 })
-      .limit(2);
+    // const memories = await LongTermMemory.find({
+    //   embedding: { $exists: true, $ne: [] }
+    // });
 
-    const memoryTexts = relevantMemories.map(
-      m => `- ${m.content}`
-    );
+    // const scoredMemories = memories.map(memory => ({
 
+    //   memory,
 
-    const personalityTraits = await PersonalityMemory
-    .find()
-    .sort({ weight: -1 })
-    .limit(3);
+    //   score: cosineSimilarity(
+    //     queryEmbedding,
+    //     memory.embedding
+    //   )
 
-  const personalitySection =
-    personalityTraits.length > 0
-      ? `User personality traits:\n${personalityTraits
-          .map(t => "- " + t.trait)
-          .join("\n")}\n`
-      : "";
+    // }));
+
+    // const relevantMemories = scoredMemories
+    //   .filter(m => m.score > 0.75)
+    //   .sort((a, b) => b.score - a.score)
+    //   .slice(0, 3)
+    //   .map(m => m.memory);
+
+    // const memoryTexts = relevantMemories.map(
+    //   m => `- ${m.content}`
+    // );
+
+    const queryEmbedding = await generateEmbedding(transcript);
+
+    let relevantMemories = [];
+    let memoryTexts = [];
+
+    if (queryEmbedding) {
+
+      const memories = await LongTermMemory.find({
+        embedding: { $exists: true, $ne: [] },
+      });
+
+      const scoredMemories = memories.map((memory) => ({
+        memory,
+        score: cosineSimilarity(queryEmbedding, memory.embedding),
+      }));
+
+      relevantMemories = scoredMemories
+        .filter((m) => m.score > 0.5)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map((m) => m.memory);
+
+      memoryTexts = relevantMemories.map((m) => `Memory: ${m.content}`);
+    }
+    const personalityTraits = await PersonalityMemory.find()
+      .sort({ weight: -1 })
+      .limit(3);
+
+    const personalitySection =
+      personalityTraits.length > 0
+        ? `User personality traits:\n${personalityTraits
+            .map((t) => "- " + t.trait)
+            .join("\n")}\n`
+        : "";
 
     // 5️⃣ Build context block
     const summarySection = session.summary
       ? `Conversation summary:\n${session.summary}\n`
       : "";
 
-    const recentSection = session.recent.length > 0
-      ? `Recent messages:\n${session.recent
-          .map(m => `${m.role.toUpperCase()}: ${m.content}`)
-          .join("\n")}\n`
-      : "";
+    const recentSection =
+      session.recent.length > 0
+        ? `Recent messages:\n${session.recent
+            .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+            .join("\n")}\n`
+        : "";
+
+    let recallSection = "";
+    let curiositySection = "";
+
+    if (shouldTriggerCuriosity()) {
+      const curiosityMemory = pickCuriosityMemory(relevantMemories);
+      if (curiosityMemory) {
+        curiositySection = `
+          Possible curiosity topic:
+          ${curiosityMemory.content}
+          `;
+      }
+    }
+    if (shouldRecallMemory()) {
+      const recalled = pickMemoryToRecall(relevantMemories);
+
+      if (recalled) {
+        recallSection = `
+          Possible related memory:
+          ${recalled.content}
+          `;
+      }
+    }
+    const memorySection = memoryTexts.length > 0
+    ? `Relevant long-term memories:\n${memoryTexts.join("\n")}\n`
+    : "";
 
     const contextualBlock = `
     ${personalitySection}
+    ${recallSection}
+    ${curiositySection}
+    ${memorySection}
     ${summarySection}
     ${recentSection}
     `;
-
     // 6️⃣ Generate reply
-    const reply = await generateReply(
-      transcript,
-      memoryTexts,
-      contextualBlock
-    );
+    const reply = await generateReply(transcript, memoryTexts, contextualBlock);
 
     console.log("RAW LLM REPLY:\n", reply);
 
@@ -106,7 +191,7 @@ export const handleVoiceRequest = async (req, res) => {
     if (reply && reply.trim().length > 0) {
       session.recent.push({
         role: "assistant",
-        content: reply
+        content: reply,
       });
     }
 
@@ -114,15 +199,14 @@ export const handleVoiceRequest = async (req, res) => {
     const MAX_RECENT = 6;
 
     if (session.recent.length > MAX_RECENT) {
-
       const chunkToSummarize = session.recent
         .slice(0, session.recent.length - 2)
-        .map(m => `${m.role.toUpperCase()}: ${m.content}`)
+        .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
         .join("\n");
 
       const newSummary = await summarizeConversation(
         session.summary,
-        chunkToSummarize
+        chunkToSummarize,
       );
 
       session.summary = newSummary;
@@ -137,11 +221,11 @@ export const handleVoiceRequest = async (req, res) => {
       "i said it wrong",
       "i was wrong",
       "correction",
-      "update"
+      "update",
     ];
 
-    const isCorrection = correctionPatterns.some(p =>
-      transcript.toLowerCase().includes(p)
+    const isCorrection = correctionPatterns.some((p) =>
+      transcript.toLowerCase().includes(p),
     );
 
     if (isCorrection) {
@@ -153,7 +237,7 @@ export const handleVoiceRequest = async (req, res) => {
       transcript,
       reply,
       session.summary,
-      isCorrection
+      isCorrection,
     );
 
     // await classifyMemory(
@@ -164,20 +248,25 @@ export const handleVoiceRequest = async (req, res) => {
     // personality detection
 
     if (memory) {
+      const embedding = await generateEmbedding(memory.content);
+
+      memory.embedding = embedding;
+
       await LongTermMemory.findOneAndUpdate(
         { tags: { $in: memory.tags } },
         { $set: memory },
-        { upsert: true, returnDocument: "after" }
+        { upsert: true, returnDocument: "after" },
       );
 
-      console.log("Memory stored/updated via classifier ✅");
+      console.log("Memory stored with embedding ✅");
     }
+
     const trait = await classifyPersonality(transcript);
     if (trait) {
       await PersonalityMemory.findOneAndUpdate(
         { trait },
         { $inc: { weight: 1 } },
-        { upsert: true, returnDocument: "after" }
+        { upsert: true, returnDocument: "after" },
       );
       console.log("Personality trait learned:", trait);
     }
@@ -188,9 +277,8 @@ export const handleVoiceRequest = async (req, res) => {
     // 11️⃣ Send response
     res.json({
       transcript,
-      reply
+      reply,
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Something went wrong" });

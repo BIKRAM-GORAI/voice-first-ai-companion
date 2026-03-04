@@ -1,31 +1,59 @@
+// import mongoose from "mongoose";
+
+// const longTermMemorySchema = new mongoose.Schema({
+//   category: {
+//     type: String,
+//     enum: ["struggle", "goal", "emotional_pattern", "project", "habit", "insight"]
+//   },
+
+//   content: {
+//     type: String,
+//     required: true
+//   },
+
+//   tags: {
+//     type: [String],
+//     default: []
+//   },
+
+//   importanceScore: {
+//     type: Number,
+//     default: 3
+//   },
+
+//   lastReferenced: {
+//     type: Date,
+//     default: null
+//   }
+
+// }, { timestamps: true });
+
+// export const LongTermMemory = mongoose.model("LongTermMemory", longTermMemorySchema);
+
+
 import mongoose from "mongoose";
 
-const longTermMemorySchema = new mongoose.Schema({
-  category: {
-    type: String,
-    enum: ["struggle", "goal", "emotional_pattern", "project", "habit", "insight"]
-  },
+const LongTermMemorySchema = new mongoose.Schema({
 
-  content: {
-    type: String,
-    required: true
-  },
+  category: String,
 
-  tags: {
-    type: [String],
+  content: String,
+
+  tags: [String],
+
+  importanceScore: Number,
+
+  embedding: {
+    type: [Number],
     default: []
   },
 
-  importanceScore: {
-    type: Number,
-    default: 3
-  },
-
-  lastReferenced: {
+  createdAt: {
     type: Date,
-    default: null
+    default: Date.now
   }
 
-}, { timestamps: true });
+});
 
-export const LongTermMemory = mongoose.model("LongTermMemory", longTermMemorySchema);
+export const LongTermMemory =
+  mongoose.model("LongTermMemory", LongTermMemorySchema);
