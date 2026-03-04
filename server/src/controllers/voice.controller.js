@@ -14,6 +14,9 @@ import {
 
 import { cosineSimilarity } from "../services/vectorSearch.service.js";
 
+import { EpisodicMemory } from "../models/EpisodicMemory.model.js";
+import { classifyEpisodicEvent } from "../services/episodicClassifier.service.js";
+
 import {
   shouldTriggerCuriosity,
   pickCuriosityMemory,
@@ -110,12 +113,12 @@ export const handleVoiceRequest = async (req, res) => {
         .slice(0, 3)
         .map((m) => m.memory);
 
-//added on my own
+      //added on my own
       await LongTermMemory.updateMany(
         { _id: { $in: relevantMemories.map((m) => m._id) } },
         { $set: { lastReferenced: new Date() } },
       );
-//
+      //
       console.log("🔎 Memory candidates:");
       scoredMemories
         .sort((a, b) => b.score - a.score)
@@ -175,8 +178,6 @@ export const handleVoiceRequest = async (req, res) => {
         ? `Relevant long-term memories:\n${memoryTexts.join("\n")}\n`
         : "";
 
-    const safe = (text) => (text ? text : "");
-
     // const contextualBlock = `
     // ${personalitySection}
     // ${recallSection}
@@ -185,9 +186,22 @@ export const handleVoiceRequest = async (req, res) => {
     // ${summarySection}
     // ${recentSection}
     // `;
+    const recentEvents = await EpisodicMemory
+      .find()
+      .sort({ createdAt: -1 })
+      .limit(3);
 
+    const episodicSection =
+      recentEvents.length > 0
+        ? `Recent events:\n${recentEvents
+            .map(e => "- " + e.event)
+            .join("\n")}\n`
+        : "";
+        
+    const safe = (text) => (text ? text : "");
     const contextualBlock = `
     ${safe(personalitySection)}
+    ${safe(episodicSection)}
     ${safe(recallSection)}
     ${safe(curiositySection)}
     ${safe(memorySection)}
@@ -197,6 +211,23 @@ export const handleVoiceRequest = async (req, res) => {
 
     // 6️⃣ Generate reply
     const reply = await generateReply(transcript, memoryTexts, contextualBlock);
+
+    /* ----------------------------- */
+    /* Episodic memory detection     */
+    /* ----------------------------- */
+
+    const episodicEvent = await classifyEpisodicEvent(transcript, reply);
+
+    if (episodicEvent) {
+      const embedding = await generateEmbedding(episodicEvent);
+
+      await EpisodicMemory.create({
+        event: episodicEvent,
+        embedding,
+      });
+
+      console.log("Episodic memory stored:", episodicEvent);
+    }
 
     console.log("RAW LLM REPLY:\n", reply);
 
