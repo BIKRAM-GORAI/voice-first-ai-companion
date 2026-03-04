@@ -17,6 +17,8 @@ import { cosineSimilarity } from "../services/vectorSearch.service.js";
 import { EpisodicMemory } from "../models/EpisodicMemory.model.js";
 import { classifyEpisodicEvent } from "../services/episodicClassifier.service.js";
 
+import { factLookup } from "../services/factLookup.service.js";
+
 import {
   shouldTriggerCuriosity,
   pickCuriosityMemory,
@@ -60,6 +62,16 @@ export const handleVoiceRequest = async (req, res) => {
     // 1️⃣ Speech to text
     const transcript = await transcribeAudio(audioBuffer);
     console.log("Transcript:", transcript);
+
+
+    const directMemory = await factLookup(transcript);
+    if (directMemory) {
+      console.log("Direct memory lookup hit");
+      return res.json({
+        transcript,
+        reply: directMemory
+      });
+    }
 
     // 2️⃣ Fetch or create session
     let session = await ConversationSession.findOne();
@@ -125,7 +137,7 @@ export const handleVoiceRequest = async (req, res) => {
         .slice(0, 5)
         .forEach((m) => console.log(m.score.toFixed(2), "→", m.memory.content));
 
-      memoryTexts = relevantMemories.map((m) => `Memory: ${m.content}`);
+      const memoryTexts = relevantMemories.map((m) => `• ${m.tags.join(", ")}`);
     }
     const personalityTraits = await PersonalityMemory.find()
       .sort({ weight: -1 })
@@ -186,18 +198,17 @@ export const handleVoiceRequest = async (req, res) => {
     // ${summarySection}
     // ${recentSection}
     // `;
-    const recentEvents = await EpisodicMemory
-      .find()
+    const recentEvents = await EpisodicMemory.find()
       .sort({ createdAt: -1 })
-      .limit(3);
+      .limit(1);
 
     const episodicSection =
       recentEvents.length > 0
         ? `Recent events:\n${recentEvents
-            .map(e => "- " + e.event)
+            .map((e) => "- " + e.event)
             .join("\n")}\n`
         : "";
-        
+
     const safe = (text) => (text ? text : "");
     const contextualBlock = `
     ${safe(personalitySection)}

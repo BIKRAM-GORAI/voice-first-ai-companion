@@ -13,7 +13,7 @@ New conversation chunk:
 ${recentChunk}
 
 Task:
-Condense both into a concise summary under 350 words.
+Condense both into a concise summary under 200 words.
 Preserve:
 - Main topic
 - Key decisions

@@ -22,13 +22,14 @@ export const generateReply = async (
     /* ------------------------------ */
 
     const messages = [
+      // {
+      //   role: "system",
+      //   content: systemPrompt
+      // },
       {
         role: "system",
-        content: systemPrompt
-      },
-      {
-        role: "system",
-        content: `${contextualBlock || ""}\n${memorySection}`
+        content: `systemPrompt + "\n\n" +
+        ${contextualBlock || ""}\n${memorySection}`
       },
       {
         role: "user",
