@@ -74,54 +74,53 @@ export const handleVoiceRequest = async (req, res) => {
       content: transcript,
     });
 
-    // const queryEmbedding = await generateEmbedding(transcript);
-
-    // const memories = await LongTermMemory.find({
-    //   embedding: { $exists: true, $ne: [] }
-    // });
-
-    // const scoredMemories = memories.map(memory => ({
-
-    //   memory,
-
-    //   score: cosineSimilarity(
-    //     queryEmbedding,
-    //     memory.embedding
-    //   )
-
-    // }));
-
-    // const relevantMemories = scoredMemories
-    //   .filter(m => m.score > 0.75)
-    //   .sort((a, b) => b.score - a.score)
-    //   .slice(0, 3)
-    //   .map(m => m.memory);
-
-    // const memoryTexts = relevantMemories.map(
-    //   m => `- ${m.content}`
-    // );
-
     const queryEmbedding = await generateEmbedding(transcript);
 
     let relevantMemories = [];
     let memoryTexts = [];
 
     if (queryEmbedding) {
-
       const memories = await LongTermMemory.find({
         embedding: { $exists: true, $ne: [] },
       });
 
-      const scoredMemories = memories.map((memory) => ({
-        memory,
-        score: cosineSimilarity(queryEmbedding, memory.embedding),
-      }));
+      const now = Date.now();
+      const scoredMemories = memories.map((memory) => {
+        const similarity = cosineSimilarity(queryEmbedding, memory.embedding);
+
+        const importance = memory.importanceScore || 1;
+        const lastUsed = memory.updatedAt
+          ? new Date(memory.updatedAt).getTime()
+          : now;
+
+        const recency = 1 / (1 + (now - lastUsed) / (1000 * 60 * 60 * 24));
+
+        const finalScore =
+          0.6 * similarity + 0.25 * (importance / 5) + 0.15 * recency;
+
+        return {
+          memory,
+          score: finalScore,
+        };
+      });
 
       relevantMemories = scoredMemories
-        .filter((m) => m.score > 0.5)
+        .filter((m) => m.score > 0.25)
         .sort((a, b) => b.score - a.score)
         .slice(0, 3)
         .map((m) => m.memory);
+
+//added on my own
+      await LongTermMemory.updateMany(
+        { _id: { $in: relevantMemories.map((m) => m._id) } },
+        { $set: { lastReferenced: new Date() } },
+      );
+//
+      console.log("🔎 Memory candidates:");
+      scoredMemories
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .forEach((m) => console.log(m.score.toFixed(2), "→", m.memory.content));
 
       memoryTexts = relevantMemories.map((m) => `Memory: ${m.content}`);
     }
@@ -144,6 +143,7 @@ export const handleVoiceRequest = async (req, res) => {
     const recentSection =
       session.recent.length > 0
         ? `Recent messages:\n${session.recent
+            .slice(-6)
             .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
             .join("\n")}\n`
         : "";
@@ -170,18 +170,31 @@ export const handleVoiceRequest = async (req, res) => {
           `;
       }
     }
-    const memorySection = memoryTexts.length > 0
-    ? `Relevant long-term memories:\n${memoryTexts.join("\n")}\n`
-    : "";
+    const memorySection =
+      memoryTexts.length > 0
+        ? `Relevant long-term memories:\n${memoryTexts.join("\n")}\n`
+        : "";
+
+    const safe = (text) => (text ? text : "");
+
+    // const contextualBlock = `
+    // ${personalitySection}
+    // ${recallSection}
+    // ${curiositySection}
+    // ${memorySection}
+    // ${summarySection}
+    // ${recentSection}
+    // `;
 
     const contextualBlock = `
-    ${personalitySection}
-    ${recallSection}
-    ${curiositySection}
-    ${memorySection}
-    ${summarySection}
-    ${recentSection}
+    ${safe(personalitySection)}
+    ${safe(recallSection)}
+    ${safe(curiositySection)}
+    ${safe(memorySection)}
+    ${safe(summarySection)}
+    ${safe(recentSection)}
     `;
+
     // 6️⃣ Generate reply
     const reply = await generateReply(transcript, memoryTexts, contextualBlock);
 

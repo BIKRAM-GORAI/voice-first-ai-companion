@@ -54,11 +54,24 @@ export const classifyMemory = async (
       If storing memory return JSON:
 
       {
-      "category": "identity | project | goal | habit | insight",
+      "category": "project | goal | habit | baseline | insight | emotional_pattern | struggle",
       "content": "Clear factual statement about Bikram",
       "tags": ["3-6 lowercase keywords"],
       "importanceScore": 1-5
       }
+      If the user explicitly asks to store something in memory,
+      you MUST generate a memory entry unless the information is meaningless.
+
+      Baseline measurements should be stored.
+
+      Examples:
+      - Fitness numbers
+      - Weight
+      - Strength metrics
+      - Skill level
+      - Current capability
+
+      These should use category: "baseline"
 
       Otherwise return:
 
